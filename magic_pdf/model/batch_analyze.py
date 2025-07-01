@@ -74,6 +74,12 @@ class BatchAnalyze:
 
             # 公式识别
             mfr_start_time = time.time()
+            
+            ## Workaround to run on cpu instead of hpu
+            # device_bk = self.model.device
+            # self.model.device = "cpu"
+            # self.model.mfr_model.device = "cpu"
+            # self.model.mfr_model.model.to("cpu")
             images_formula_list = self.model.mfr_model.batch_predict(
                 images_mfd_res,
                 images,
@@ -83,6 +89,8 @@ class BatchAnalyze:
             for image_index in range(len(images)):
                 images_layout_res[image_index] += images_formula_list[image_index]
                 mfr_count += len(images_formula_list[image_index])
+            # self.model.device = device_bk
+            
             # logger.info(
             #     f'mfr time: {round(time.time() - mfr_start_time, 2)}, image num: {mfr_count}'
             # )

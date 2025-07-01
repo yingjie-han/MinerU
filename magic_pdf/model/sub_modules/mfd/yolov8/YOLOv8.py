@@ -31,3 +31,16 @@ class YOLOv8MFDModel(object):
             for image_res in mfd_res:
                 images_mfd_res.append(image_res)
         return images_mfd_res
+
+if __name__ == '__main__':
+    import cv2
+    model = YOLOv8MFDModel(weight="/opt/models/MFD/YOLO/yolo_v8_ft.pt", device="hpu")
+    img1 = cv2.imread("/home//MinerU/voice1.png")
+    img2 = cv2.imread("/home//MinerU/voice2.jpg")
+    res = model.predict(img1)
+    print("Single Image Prediction Result:")
+    print(res)
+    print()
+    res = model.batch_predict([img1,img2],batch_size=2)
+    print("Batch Prediction Result:")
+    print(res)

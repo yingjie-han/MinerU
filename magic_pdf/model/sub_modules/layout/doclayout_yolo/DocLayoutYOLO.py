@@ -62,3 +62,17 @@ class DocLayoutYOLOModel(object):
                 images_layout_res.append(layout_res)
 
         return images_layout_res
+
+
+if __name__ == '__main__':
+    import cv2
+    layout_model = DocLayoutYOLOModel(weight="/opt/models/Layout/YOLO/doclayout_yolo_ft.pt", device="hpu")
+    img1 = cv2.imread("/home//MinerU/voice1.png")
+    img2 = cv2.imread("/home//MinerU/voice2.jpg")
+    res = layout_model.predict(img1)
+    print("Single Image Prediction Result:")
+    print(res)
+    print()
+    res = layout_model.batch_predict([img1,img2],batch_size=2)
+    print("Batch Prediction Result:")
+    print(res)
