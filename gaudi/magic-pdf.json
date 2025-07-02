@@ -4,7 +4,8 @@
         "bucket-name-2":["ak", "sk", "endpoint"]
     },
     "temp-output-dir":"/home/yingjieh_1/MinerU/temp_output",
-    "models-dir":"/home/yingjieh_1/MinerU/models",
+    "models-dir":"/opt/models",
+    "layoutreader-model-dir": "/opt/models/layoutreader",
     "device-mode":"cpu",
     "layout-config": {
         "model": "doclayout_yolo" 

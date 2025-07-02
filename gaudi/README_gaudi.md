@@ -76,8 +76,7 @@ Add the  hpu device branch in warmup() as following:
 
 ### Runing pipeline on hpu
 You can chage the param in "magic-pdf_hpu.json"
-As Unimernet_small has not enabled on gaudi yet， So "formula-config" is set to "enable": false.
-As slanet_plus has not enabled on gaudi yet， So "table-config" is set to "enable": false.
+As Unimernet_small has not enabled on gaudi yet, UNIMERNET_DEVICE environment variable is used to set the device Unimernet_small running on, default value is "CPU".
 ```bash
 MINERU_TOOLS_CONFIG_JSON=/home/MinerU/gaudi/magic-pdf_hpu.json magic-pdf -p ./test.pdf -o ./  -m ocr
 ```

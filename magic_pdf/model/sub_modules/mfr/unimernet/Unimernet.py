@@ -25,6 +25,10 @@ class UnimernetModel(object):
             self.model = UnimernetModel.from_pretrained(weight_dir, attn_implementation="eager")
         else:
             self.model = UnimernetModel.from_pretrained(weight_dir)
+                
+        if _device_=="hpu":
+            _device_ = os.getenv("UNIMERNET_DEVICE", "cpu")
+            
         self.device = _device_
         self.model.to(_device_)
         if not _device_.startswith("cpu"):
