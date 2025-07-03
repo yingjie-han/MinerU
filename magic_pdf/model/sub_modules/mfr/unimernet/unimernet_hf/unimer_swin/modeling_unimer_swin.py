@@ -140,6 +140,7 @@ def window_reverse(windows, window_size, height, width):
     Merges windows to produce higher resolution features.
     """
     num_channels = windows.shape[-1]
+    windows = windows.clone() # wired precision bug on eager mode. Extra clone() can fix it.
     windows = windows.view(-1, height // window_size, width // window_size, window_size, window_size, num_channels)
     windows = windows.permute(0, 1, 3, 2, 4, 5).contiguous().view(-1, height, width, num_channels)
     return windows
