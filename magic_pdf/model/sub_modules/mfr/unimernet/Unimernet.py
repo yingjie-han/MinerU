@@ -22,6 +22,9 @@ class MathDataset(Dataset):
 class UnimernetModel(object):
     def __init__(self, weight_dir, cfg_path, _device_="cpu"):
         from .unimernet_hf import UnimernetModel
+        if _device_=="hpu":
+            _device_ = os.getenv("UNIMERNET_DEVICE", "hpu")
+            
         if _device_.startswith("mps"):
             self.model = UnimernetModel.from_pretrained(weight_dir, attn_implementation="eager")
         elif _device_.startswith("hpu"):
@@ -34,9 +37,7 @@ class UnimernetModel(object):
                 self.model.encoder = wrap_in_hpu_graph(self.model.encoder)
         else:
             self.model = UnimernetModel.from_pretrained(weight_dir)
-                
-        if _device_=="hpu":
-            _device_ = os.getenv("UNIMERNET_DEVICE", "cpu")
+
             
         self.device = _device_
         self.model.to(_device_)
