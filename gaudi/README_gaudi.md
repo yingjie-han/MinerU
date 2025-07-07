@@ -1,15 +1,28 @@
+## Run Docker Image
+Use the following commands to run a Docker image.
+```bash
+$ docker pull vault.habana.ai/gaudi-docker/1.21.0/ubuntu22.04/habanalabs/pytorch-installer-2.6.0:latest
+$ docker run -it --runtime=habana -e HABANA_VISIBLE_DEVICES=all -e OMPI_MCA_btl_vader_single_copy_mechanism=none --cap-add=sys_nice --net=host --ipc=host vault.habana.ai/gaudi-docker/1.21.0/ubuntu22.04/habanalabs/pytorch-installer-2.6.0:latest
+```
 
 ## Install MinerU from source
 ```bash
-git clone https://github.com/yingjie-han/MinerU.git
-git checkout release-1.3.8-hpu
-pip install -e .[full]
+$ git clone https://github.com/yingjie-han/MinerU.git
+$ git checkout release-1.3.8-hpu
+$ pip install -e .[full]
+```
+
+## Install optimum-habana from source
+```bash
+$ git clone https://github.com/huggingface/optimum-habana
+$ cd optimum-habana && git checkout v1.19-release
+$ pip install -e .
 ```
 
 ## Download models
 ```bash
-cd MinerU/projects/web_api
-python download_models.py
+$ cd MinerU/projects/web_api
+$ python download_models.py
 ```
 Default downloaded moodel_dir is: /opt/models
 layoutreader_model_dir is: /opt/layoutreader
@@ -17,7 +30,7 @@ layoutreader_model_dir is: /opt/layoutreader
 
 ## Runing pipeline on CPU
 ```bash
-MINERU_TOOLS_CONFIG_JSON=/home/MinerU/gaudi/magic-pdf.json magic-pdf -p ./test.pdf -o ./  -m ocr
+$ MINERU_TOOLS_CONFIG_JSON=/home/MinerU/gaudi/magic-pdf.json magic-pdf -p ./test.pdf -o ./  -m ocr
 ```
 
 ## Runing pipeline on Gaudi
@@ -76,7 +89,6 @@ Add the  hpu device branch in warmup() as following:
 
 ### Runing pipeline on hpu
 You can chage the param in "magic-pdf_hpu.json"
-As Unimernet_small has not enabled on gaudi yet, UNIMERNET_DEVICE environment variable is used to set the device Unimernet_small running on, default value is "CPU".
 ```bash
-MINERU_TOOLS_CONFIG_JSON=/home/MinerU/gaudi/magic-pdf_hpu.json magic-pdf -p ./test.pdf -o ./  -m ocr
+$ MINERU_TOOLS_CONFIG_JSON=/home/MinerU/gaudi/magic-pdf_hpu.json magic-pdf -p ./test.pdf -o ./  -m ocr
 ```
