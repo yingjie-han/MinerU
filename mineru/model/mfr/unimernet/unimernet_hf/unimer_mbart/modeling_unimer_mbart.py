@@ -55,6 +55,12 @@ from transformers.utils import (
 from .configuration_unimer_mbart import UnimerMBartConfig
 
 
+try:
+    from habana_frameworks.torch.hpex.kernels import FusedSDPA
+except ImportError:
+    print("Not using HPU fused scaled dot-product attention kernel.")
+    FusedSDPA = None
+
 if is_flash_attn_2_available():
     from flash_attn import flash_attn_func, flash_attn_varlen_func
     from flash_attn.bert_padding import index_first_axis, pad_input, unpad_input  # noqa
@@ -176,6 +182,48 @@ class UnimerMBartScaledWordEmbedding(nn.Embedding):
     def forward(self, input_ids: torch.Tensor):
         return super().forward(input_ids) * self.embed_scale
 
+class KVCache(torch.nn.Module):
+    def __init__(self):
+        super(KVCache, self).__init__()
+        self.cache = None
+        self.inp_seq_len = -1
+
+    def allocate(self, inp_seq_len, dtype, device, shape):
+        if self.cache is None or self.cache.shape != shape:
+            self.inp_seq_len = inp_seq_len
+            self.cache = torch.zeros(shape, dtype=dtype, device=device)
+        else:
+            assert self.inp_seq_len == inp_seq_len, (
+                f"inp_seq_len must be the same. self.inp_seq_len:{self.inp_seq_len} inp_seq_len:{inp_seq_len}"
+            )
+            self.cache.fill_(0)
+
+    @staticmethod
+    def update(prev, cur, dim, idx, inp_seq_len):
+        if inp_seq_len != -1:
+            # reuse cache logic
+            orig_cur = cur
+            if prev.shape == cur.shape:
+                prev.copy_(cur)
+                return orig_cur
+            if cur.shape[2] > 1 and cur.shape[2] <= prev.shape[2]:
+                # Initialize
+                prev[:, :, :inp_seq_len, :].copy_(cur)
+                return orig_cur
+        if idx is not None:
+            # 2+ tokenizer logic if model is static shape optimized
+            prev.index_copy_(dim, idx - 1, cur)
+            return prev
+        else:
+            return torch.cat((prev, cur), dim=dim)
+
+    def get_shape(self):
+        if self.cache is None:
+            return None
+        return self.cache.shape
+
+    def forward(self, cur, dim, idx):
+        return self.update(self.cache, cur, dim, idx, self.inp_seq_len)
 
 # Copied from transformers.models.bart.modeling_bart.BartAttention with Bart->MBart
 class UnimerMBartAttention(nn.Module):
@@ -215,7 +263,9 @@ class UnimerMBartAttention(nn.Module):
         self.k_proj = nn.Linear(embed_dim, self.squeeze_dim, bias=bias)
         self.v_proj = nn.Linear(embed_dim, embed_dim, bias=bias)
         self.out_proj = nn.Linear(embed_dim, embed_dim, bias=bias)
-
+        self.k_cache = KVCache()
+        self.v_cache = KVCache()
+        
     def _shape_qk(self, tensor: torch.Tensor, seq_len: int, bsz: int):
         return tensor.view(bsz, seq_len, self.num_heads, self.squeeze_head_dim).transpose(1, 2).contiguous()
 
@@ -579,6 +629,7 @@ class UnimerMBartSdpaAttention(UnimerMBartAttention):
         attention_mask: Optional[torch.Tensor] = None,
         layer_head_mask: Optional[torch.Tensor] = None,
         output_attentions: bool = False,
+        token_idx: Optional[torch.Tensor] = None,
     ) -> Tuple[torch.Tensor, Optional[torch.Tensor], Optional[Tuple[torch.Tensor]]]:
         """Input shape: Batch x Time x Channel"""
         if output_attentions or layer_head_mask is not None:
@@ -624,13 +675,26 @@ class UnimerMBartSdpaAttention(UnimerMBartAttention):
             # reuse k, v, self_attention
             key_states = self._shape_qk(self.k_proj(hidden_states), -1, bsz)
             value_states = self._shape_v(self.v_proj(hidden_states), -1, bsz)
-            key_states = torch.cat([past_key_value[0], key_states], dim=2)
-            value_states = torch.cat([past_key_value[1], value_states], dim=2)
+            key_states = self.k_cache.update(past_key_value[0], key_states, 2, token_idx, -1)
+            value_states = self.v_cache.update(past_key_value[1], value_states, 2, token_idx, -1)
         else:
             # self_attention
             key_states = self._shape_qk(self.k_proj(hidden_states), -1, bsz)
             value_states = self._shape_v(self.v_proj(hidden_states), -1, bsz)
 
+            past_key = torch.zeros(
+                key_states.shape,
+                dtype=key_states.dtype,
+                device=key_states.device,
+            )
+            past_value = torch.zeros(
+                value_states.shape,
+                dtype=value_states.dtype,
+                device=value_states.device,
+            )
+            key_states = self.k_cache.update(past_key, key_states, 2, token_idx, key_states.shape[-2])
+            value_states = self.v_cache.update(past_value, value_states, 2, token_idx, value_states.shape[-2])
+            
         if self.is_decoder:
             # if cross_attention save Tuple(torch.Tensor, torch.Tensor) of all cross attention key/value_states.
             # Further calls to cross_attention layer can then reuse all cross-attention
@@ -650,14 +714,30 @@ class UnimerMBartSdpaAttention(UnimerMBartAttention):
 
         # NOTE: SDPA with memory-efficient backend is currently (torch==2.1.2) bugged when using non-contiguous inputs and a custom attn_mask,
         # but we are fine here as `_shape` do call `.contiguous()`. Reference: https://github.com/pytorch/pytorch/issues/112577
-        attn_output = torch.nn.functional.scaled_dot_product_attention(
-            query_states,
-            key_states,
-            value_states,
-            attn_mask=attention_mask,
-            dropout_p=self.dropout if self.training else 0.0,
-            is_causal=is_causal,
-        )
+        if hidden_states.device.type == 'hpu' and FusedSDPA:
+            attn_output = FusedSDPA.apply(
+                query_states,
+                key_states,
+                value_states,
+                attention_mask,
+                self.dropout if self.training else 0.0,
+                is_causal,
+                None,
+                "None",
+                False,
+                None,
+                "None",
+            )
+        else:
+            attn_output = torch.nn.functional.scaled_dot_product_attention(
+                query_states,
+                key_states,
+                value_states,
+                attn_mask=attention_mask,
+                dropout_p=self.dropout if self.training else 0.0,
+                is_causal=is_causal,
+            )
+
 
         if attn_output.size() != (bsz, self.num_heads, tgt_len, self.head_dim):
             raise ValueError(
@@ -793,6 +873,7 @@ class UnimerMBartDecoderLayer(nn.Module):
         past_key_value: Optional[Tuple[torch.Tensor]] = None,
         output_attentions: Optional[bool] = False,
         use_cache: Optional[bool] = True,
+        token_idx: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         """
         Args:
@@ -825,6 +906,7 @@ class UnimerMBartDecoderLayer(nn.Module):
             attention_mask=attention_mask,
             layer_head_mask=layer_head_mask,
             output_attentions=output_attentions,
+            token_idx=token_idx,
         )
         hidden_states = nn.functional.dropout(hidden_states, p=self.dropout, training=self.training)
         hidden_states = residual + hidden_states
@@ -845,6 +927,7 @@ class UnimerMBartDecoderLayer(nn.Module):
                 layer_head_mask=cross_attn_layer_head_mask,
                 past_key_value=cross_attn_past_key_value,
                 output_attentions=output_attentions,
+                token_idx=token_idx,
             )
             hidden_states = nn.functional.dropout(hidden_states, p=self.dropout, training=self.training)
             hidden_states = residual + hidden_states
@@ -1329,6 +1412,7 @@ class UnimerMBartDecoder(UnimerMBartPreTrainedModel):
         output_attentions: Optional[bool] = None,
         output_hidden_states: Optional[bool] = None,
         return_dict: Optional[bool] = None,
+        token_idx: Optional[torch.Tensor] = None,
     ) -> Union[Tuple, BaseModelOutputWithPastAndCrossAttentions]:
         r"""
         Args:
@@ -1515,6 +1599,7 @@ class UnimerMBartDecoder(UnimerMBartPreTrainedModel):
                     None,
                     output_attentions,
                     use_cache,
+                    token_idx,
                 )
             else:
                 layer_outputs = decoder_layer(
@@ -1529,6 +1614,7 @@ class UnimerMBartDecoder(UnimerMBartPreTrainedModel):
                     past_key_value=past_key_value,
                     output_attentions=output_attentions,
                     use_cache=use_cache,
+                    token_idx=token_idx,
                 )
             hidden_states = layer_outputs[0]
 
@@ -1625,6 +1711,7 @@ class UnimerMBartModel(UnimerMBartPreTrainedModel):
         output_attentions: Optional[bool] = None,
         output_hidden_states: Optional[bool] = None,
         return_dict: Optional[bool] = None,
+        token_idx: Optional[torch.Tensor] = None,
     ) -> Union[Seq2SeqModelOutput, Tuple[torch.FloatTensor]]:
         output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
         output_hidden_states = (
@@ -1670,6 +1757,7 @@ class UnimerMBartModel(UnimerMBartPreTrainedModel):
             output_attentions=output_attentions,
             output_hidden_states=output_hidden_states,
             return_dict=return_dict,
+            token_idx=token_idx,
         )
 
         if not return_dict:
@@ -1752,6 +1840,7 @@ class UnimerMBartForConditionalGeneration(UnimerMBartPreTrainedModel, Generation
         output_attentions: Optional[bool] = None,
         output_hidden_states: Optional[bool] = None,
         return_dict: Optional[bool] = None,
+        token_idx: Optional[torch.Tensor] = None,
     ) -> Union[Seq2SeqLMOutput, Tuple[torch.FloatTensor]]:
         r"""
         labels (`torch.LongTensor` of shape `(batch_size, sequence_length)`, *optional*):
@@ -1787,6 +1876,7 @@ class UnimerMBartForConditionalGeneration(UnimerMBartPreTrainedModel, Generation
             output_attentions=output_attentions,
             output_hidden_states=output_hidden_states,
             return_dict=return_dict,
+            token_idx=token_idx,
         )
         lm_logits = self.lm_head(outputs[0]) + self.final_logits_bias
 
@@ -2182,6 +2272,8 @@ class UnimerMBartForCausalLM(UnimerMBartPreTrainedModel, GenerationMixin):
         output_hidden_states: Optional[bool] = None,
         return_dict: Optional[bool] = None,
         count_gt: Optional[torch.LongTensor] = None,
+        position_ids: Optional[torch.FloatTensor] = None,
+        token_idx: Optional[torch.Tensor] = None,
     ) -> Union[Tuple, CausalLMOutputWithCrossAttentions]:
         r"""
         Args:
@@ -2291,6 +2383,7 @@ class UnimerMBartForCausalLM(UnimerMBartPreTrainedModel, GenerationMixin):
             output_attentions=output_attentions,
             output_hidden_states=output_hidden_states,
             return_dict=return_dict,
+            token_idx=token_idx,            
         )
 
         logits = self.lm_head(outputs[0])
@@ -2316,7 +2409,7 @@ class UnimerMBartForCausalLM(UnimerMBartPreTrainedModel, GenerationMixin):
         )
 
     def prepare_inputs_for_generation(
-        self, input_ids, past_key_values=None, attention_mask=None, use_cache=None, **kwargs
+        self, input_ids, past_key_values=None, attention_mask=None, use_cache=None, token_idx=None, **kwargs
     ):
         # if model is used as a decoder in encoder-decoder model, the decoder attention mask is created on the fly
         if attention_mask is None:
@@ -2332,13 +2425,15 @@ class UnimerMBartForCausalLM(UnimerMBartPreTrainedModel, GenerationMixin):
                 # Default to old behavior: keep only final ID
                 remove_prefix_length = input_ids.shape[1] - 1
 
-            input_ids = input_ids[:, remove_prefix_length:]
+            # input_ids = input_ids[:, remove_prefix_length:]
+            input_ids = torch.index_select(input_ids, 1, token_idx - 1)
         # first step, decoder_cached_states are empty
         return {
             "input_ids": input_ids,  # encoder_outputs is defined. input_ids not needed
             "attention_mask": attention_mask,
             "past_key_values": past_key_values,
             "use_cache": use_cache,
+            "token_idx": token_idx,
         }
 
     @staticmethod

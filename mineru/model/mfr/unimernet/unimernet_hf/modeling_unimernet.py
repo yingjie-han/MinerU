@@ -478,7 +478,9 @@ class UnimernetModel(VisionEncoderDecoderModel):
         if do_sample:
             kwargs["temperature"] = temperature
             kwargs["top_p"] = top_p
-        
+            
+        self.generation_config.static_shapes = True
+                
         outputs = super().generate(
             pixel_values=pixel_values,
             max_new_tokens=self.tokenizer.tokenizer.model_max_length, # required

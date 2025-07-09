@@ -1,3 +1,4 @@
+import os
 import torch
 from torch.utils.data import DataLoader, Dataset
 from tqdm import tqdm
@@ -23,11 +24,21 @@ class UnimernetModel(object):
         from .unimernet_hf import UnimernetModel
         if _device_.startswith("mps") or _device_.startswith("npu"):
             self.model = UnimernetModel.from_pretrained(weight_dir, attn_implementation="eager")
+        elif _device_.startswith("hpu"):
+            from optimum.habana.transformers.modeling_utils import adapt_transformers_to_gaudi
+            from habana_frameworks.torch.hpu import wrap_in_hpu_graph
+            adapt_transformers_to_gaudi()
+            self.model = UnimernetModel.from_pretrained(weight_dir, attn_implementation="sdpa")
+            if os.environ.get("PT_HPU_LAZY_MODE", "0") == "1":
+                self.model.decoder = wrap_in_hpu_graph(self.model.decoder)
+                self.model.encoder = wrap_in_hpu_graph(self.model.encoder)            
         else:
             self.model = UnimernetModel.from_pretrained(weight_dir)
         self.device = _device_
         self.model.to(_device_)
-        if not _device_.startswith("cpu"):
+        if _device_.startswith("hpu"):
+            self.model = self.model.to(dtype=torch.bfloat16)
+        elif not _device_.startswith("cpu"):
             self.model = self.model.to(dtype=torch.float16)
         self.model.eval()
 
