@@ -3,6 +3,7 @@ from tqdm import tqdm
 from ultralytics import YOLO
 import numpy as np
 from PIL import Image
+import habana_frameworks.torch.core as htcore
 
 
 class YOLOv8MFDModel:
@@ -51,3 +52,16 @@ class YOLOv8MFDModel:
                 results.extend(batch_preds)
                 pbar.update(len(batch))
         return results
+    
+if __name__ == '__main__':
+    import cv2
+    model = YOLOv8MFDModel(weight="/home/yingjieh_1/MinerU/models/MFD/YOLO/yolo_v8_ft.pt", device="hpu")
+    img1 = cv2.imread("/home/yingjieh_1/MinerU/voice1.png")
+    img2 = cv2.imread("/home/yingjieh_1/MinerU/voice2.jpg")
+    res = model.predict(img1)
+    print("Single Image Prediction Result:")
+    print(res)
+    print()
+    res = model.batch_predict([img1,img2],batch_size=2)
+    print("Batch Prediction Result:")
+    print(res)
