@@ -189,6 +189,9 @@ def batch_image_analyze(
             # Default batch_ratio when VRAM can't be determined
             batch_ratio = 1
             logger.info(f'Could not determine GPU memory, using default batch_ratio: {batch_ratio}')
+            
+    batch_ratio = int(os.getenv('MINERU_BATCH_RATIO', 1))
+    print("batch_ratio=",batch_ratio)       
 
     batch_model = BatchAnalyze(model_manager, batch_ratio, formula_enable, table_enable)
     results = batch_model(images_with_extra_info)
