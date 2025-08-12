@@ -19,7 +19,7 @@ from .base_predictor import (
     BasePredictor,
 )
 from .utils import load_resource
-
+import os
 
 class HuggingfacePredictor(BasePredictor):
     def __init__(
@@ -49,6 +49,9 @@ class HuggingfacePredictor(BasePredictor):
             no_repeat_ngram_size=no_repeat_ngram_size,
             max_new_tokens=max_new_tokens,
         )
+
+        if os.getenv('MINERU_DEVICE_MODE', None) is not None:
+            device = os.environ['MINERU_DEVICE_MODE']
 
         kwargs = {"device_map": device_map, **kwargs}
 
