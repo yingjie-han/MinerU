@@ -126,7 +126,6 @@ Add the  hpu device branch in warmup() as following:
 ```
 
 ### Runing pipeline on hpu
-You can chage the param in "magic-pdf_hpu.json"
 ```bash
-$ mineru -p ./test.pdf -o ./ -d hpu -m ocr
+$ MINERU_DEVICE_MODE=hpu mineru -p ./test.pdf -o ./ -d hpu -m ocr
 ```
