@@ -5,7 +5,7 @@
     },
     "temp-output-dir":"/home/MinerU/temp_output",
     "models-dir":"/opt/models",
-    "layoutreader-model-dir": "/opt/models/layoutreader",
+    "layoutreader-model-dir": "/opt/layoutreader",
     "device-mode":"hpu",
     "layout-config": {
         "model": "doclayout_yolo" 
