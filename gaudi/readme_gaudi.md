@@ -15,7 +15,7 @@ $ pip install -e .[core]
 ## Install optimum-habana from source
 ```bash
 $ git clone https://github.com/huggingface/optimum-habana
-$ cd optimum-habana && git checkout v1.19-release
+$ cd optimum-habana && git checkout 48a2dae1709b50630c6fc93fdf76c52fdfb82566
 $ pip install -e .
 ```
 
