@@ -1943,7 +1943,10 @@ class UnimerMBartForSequenceClassification(UnimerMBartPreTrainedModel):
         )
         hidden_states = outputs[0]  # last hidden state
 
-        eos_mask = input_ids.eq(self.config.eos_token_id).to(hidden_states.device)
+        if input_ids is not None: 
+            eos_mask = input_ids.eq(self.config.eos_token_id).to(hidden_states.device)
+        else:
+            raise ValueError("input_ids is None.")            
 
         if len(torch.unique_consecutive(eos_mask.sum(1))) > 1:
             raise ValueError("All examples must have the same number of <eos> tokens.")
