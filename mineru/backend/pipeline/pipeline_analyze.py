@@ -189,7 +189,11 @@ def batch_image_analyze(
             # Default batch_ratio when VRAM can't be determined
             batch_ratio = 1
             logger.info(f'Could not determine GPU memory, using default batch_ratio: {batch_ratio}')
-
+    
+    if str(device).startswith('hpu'):
+        batch_ratio = int(os.getenv('MINERU_BATCH_RATIO', 1))
+        logger.info(f'batch_ratio: {batch_ratio}')    
+    
     # 检测torch的版本号
     import torch
     from packaging import version

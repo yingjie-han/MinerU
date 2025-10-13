@@ -10,6 +10,10 @@ from loguru import logger
 from transformers import AutoConfig, AutoModel, AutoModelForCausalLM, AutoTokenizer, PretrainedConfig, PreTrainedModel
 from transformers import VisionEncoderDecoderConfig, VisionEncoderDecoderModel
 from transformers.models.vision_encoder_decoder.modeling_vision_encoder_decoder import logger as base_model_logger
+from transformers.generation import (
+    MaxLengthCriteria,
+    StoppingCriteriaList,
+)
 
 from .unimer_swin import UnimerSwinConfig, UnimerSwinModel, UnimerSwinImageProcessor
 from .unimer_mbart import UnimerMBartConfig, UnimerMBartForCausalLM
@@ -479,6 +483,11 @@ class UnimernetModel(VisionEncoderDecoderModel):
             kwargs["temperature"] = temperature
             kwargs["top_p"] = top_p
 
+            
+        self.generation_config.static_shapes = True
+        stopping_criteria = StoppingCriteriaList()
+        stopping_criteria.append(MaxLengthCriteria(self.tokenizer.tokenizer.model_max_length + 1))
+                   
         if self.tokenizer.tokenizer.model_max_length > 1152:
             if batch_size <= 32:
                 self.tokenizer.tokenizer.model_max_length = 1152  # 6g
@@ -487,9 +496,11 @@ class UnimernetModel(VisionEncoderDecoderModel):
 
         outputs = super().generate(
             pixel_values=pixel_values,
-            max_new_tokens=self.tokenizer.tokenizer.model_max_length, # required
+            #max_new_tokens=self.tokenizer.tokenizer.model_max_length, # required
+            max_new_tokens=self.tokenizer.tokenizer.model_max_length + 1,
             decoder_start_token_id=self.tokenizer.tokenizer.bos_token_id,
             do_sample=do_sample,
+            stopping_criteria=stopping_criteria,
             **kwargs,
         )
 

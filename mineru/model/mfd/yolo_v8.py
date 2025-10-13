@@ -7,7 +7,7 @@ from PIL import Image, ImageDraw
 
 from mineru.utils.enum_class import ModelPath
 from mineru.utils.models_download_utils import auto_download_and_get_model_root_path
-
+import habana_frameworks.torch.core as htcore
 
 class YOLOv8MFDModel:
     def __init__(
