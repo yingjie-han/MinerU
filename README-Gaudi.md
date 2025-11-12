@@ -7,7 +7,7 @@ $ docker run -it --runtime=habana -e HABANA_VISIBLE_DEVICES=all -e OMPI_MCA_btl_
 
 ## Install MinerU from source
 ```bash
-$ git clone https://github.com/yingjie-han/MinerU.git
+$ git clone https://gitee.com/intel-china/aisolution-mineru.git
 $ git checkout release-2.5.4-hpu
 $ pip install -e .[core]
 ```
@@ -30,11 +30,14 @@ $ cp -r vllm/vllm/v1/sample/logits_processor vllm-fork/vllm/v1/sample/logits_pro
 export MAX_NUM_SEQS=16
 export PT_HPU_LAZY_MODE=1
 export VLLM_SKIP_WARMUP=True
-export VLLM_GRAPH_RESERVED_MEM=0.2
+export VLLM_GRAPH_RESERVED_MEM=0.5
 export VLLM_GRAPH_PROMPT_RATIO=0.4
-export VLLM_MULTIMODAL_BUCKETS="64,192,384,960,1600,2496,3136,4096,5504,8064,9216"
+export VLLM_MULTIMODAL_BUCKETS="64,192,384,512,640,768,896,1024,1152,1280,1408,1536,1664,2496, 3136, 4096, 5504, 6272, 7104, 8192, 9216"
 export MINERU_MODEL_SOURCE=local
-export VLLM_CONFIGURE_LOGGING=0
+export VLLM_CONFIGURE_LOGGING=1
+export VLLM_USE_V1=0
+export VLLM_FP32_SOFTMAX=true
+export VLLM_FP32_SOFTMAX_VISION=true
 ```
 
 #### Quick Usage via Command Line
